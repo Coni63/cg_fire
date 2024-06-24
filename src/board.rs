@@ -1,12 +1,15 @@
+#[derive(PartialEq)]
 pub enum CellType {
     Tree,
     House,
     Empty,
 }
 
+#[derive(PartialEq)]
 pub enum CellState {
     Safe,
     OnFire,
+    Cutting,
     Unsafe,
     Burnt,
 }
@@ -41,8 +44,10 @@ impl Cell {
         self.value = 0;
     }
 
-    pub fn set_on_fire(&mut self, fire_duration: i32) {
-        self.fire_duration = fire_duration;
+    pub fn set_on_fire(&mut self) {
+        if self.state != CellState::Unsafe {
+            return;
+        }
         self.value = 0;
         self.state = CellState::OnFire;
     }
@@ -76,12 +81,54 @@ impl Board {
         }
     }
 
-    pub fn get_cell(&self, x: usize, y: usize) -> &Cell {
-        &self.cells[x][y]
+    pub fn step(&mut self) -> bool {
+        let mut count_fire = 0;
+        let mut cells_to_propagate: Vec<(usize, usize)> = Vec::new();
+
+        for row in 0..self.height as usize {
+            for col in 0..self.width as usize {
+                let cell = &mut self.cells[row][col];
+                match cell.state {
+                    CellState::OnFire => {
+                        cell.fire_duration -= 1;
+                        count_fire += 1;
+                        if cell.fire_duration == 0 {
+                            cell.state = CellState::Burnt;
+                            cells_to_propagate.push((row, col));
+                        }
+                    }
+                    CellState::Cutting => {
+                        cell.cut_duration -= 1;
+                        if cell.cut_duration == 0 {
+                            cell.set_safe();
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        for (row, col) in cells_to_propagate.iter() {
+            self.propagate_fire(*row, *col);
+        }
+        count_fire == 0
     }
 
-    pub fn set_cell(&mut self, x: usize, y: usize, cell: Cell) {
-        self.cells[x][y] = cell;
+    pub fn cut(&mut self, row: usize, col: usize) {
+        let cell = &mut self.cells[row][col];
+        if cell.state == CellState::Unsafe {
+            cell.state = CellState::Cutting;
+            cell.value = 0;
+            cell.cut_duration -= 1;
+            self.cooldown = cell.cut_duration;
+        }
+    }
+
+    fn propagate_fire(&mut self, row: usize, col: usize) {
+        self.cells[row - 1][col].set_on_fire();
+        self.cells[row + 1][col].set_on_fire();
+        self.cells[row][col - 1].set_on_fire();
+        self.cells[row][col + 1].set_on_fire();
     }
 
     pub fn show_values(&self) {
@@ -111,9 +158,10 @@ impl Board {
             for cell in row.iter() {
                 match cell.state {
                     CellState::Safe => print!("#"),
-                    CellState::OnFire => print!("F"),
+                    CellState::OnFire => print!("{}", cell.fire_duration),
                     CellState::Unsafe => print!("."),
                     CellState::Burnt => print!("#"),
+                    CellState::Cutting => print!("C"),
                 }
             }
             println!();

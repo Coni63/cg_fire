@@ -83,7 +83,8 @@ pub fn load_input() -> Board {
                 }
                 -1 => (),
                 _ => {
-                    board[i][j].set_on_fire(fire_progress);
+                    // TODO: set fire duration
+                    board[i][j].set_on_fire();
                 }
             }
         }
