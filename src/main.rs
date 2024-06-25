@@ -11,7 +11,7 @@ fn main() {
 
     let actions: Vec<(usize, usize)> = agent::solve(&mut board);
 
-    let mut turn = 1;
+    let mut turn = 0;
     let mut idx_action = 0;
     let mut end = false;
     while !end {
@@ -23,6 +23,7 @@ fn main() {
         end = board.step();
         turn += 1;
         println!("Turn: {}", turn);
+        board.describe();
         board.show_fire();
     }
 }

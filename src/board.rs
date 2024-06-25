@@ -128,16 +128,17 @@ impl Board {
                 let cell = &mut self.cells[row][col];
                 match cell.state {
                     CellState::OnFire => {
-                        cell.fire_duration -= 1;
+                        cell.timer -= 1;
                         count_fire += 1;
-                        if cell.fire_duration == 0 {
+                        if cell.timer == 0 {
                             cell.set_state(CellState::Burnt);
                             cells_to_propagate.push((row, col));
                         }
                     }
                     CellState::Cutting => {
-                        cell.cut_duration -= 1;
-                        if cell.cut_duration == 0 {
+                        cell.timer -= 1;
+                        self.cooldown = cell.timer;
+                        if cell.timer == 0 {
                             cell.set_state(CellState::Safe);
                         }
                     }
@@ -161,7 +162,7 @@ impl Board {
         if cell.state == CellState::Unsafe {
             cell.state = CellState::Cutting;
             cell.value = 0;
-            cell.cut_duration -= 1;
+            cell.timer = cell.cut_duration;
             self.cooldown = cell.cut_duration;
         }
     }
@@ -200,7 +201,7 @@ impl Board {
             for cell in row.iter() {
                 match cell.state {
                     CellState::Safe => print!("#"),
-                    CellState::OnFire => print!("{}", cell.fire_duration),
+                    CellState::OnFire => print!("{}", cell.timer),
                     CellState::Unsafe => print!("."),
                     CellState::Burnt => print!("#"),
                     CellState::Cutting => print!("C"),
@@ -208,6 +209,10 @@ impl Board {
             }
             println!();
         }
+    }
+
+    pub fn describe(&self) {
+        println!("Cooldown: {}", self.cooldown);
     }
 
     pub fn score(&self) -> i32 {
