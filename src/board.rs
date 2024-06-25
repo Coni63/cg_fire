@@ -209,4 +209,16 @@ impl Board {
             println!();
         }
     }
+
+    pub fn score(&self) -> i32 {
+        let mut score = 0;
+        for row in self.cells.iter() {
+            for cell in row.iter() {
+                if cell.state == CellState::Unsafe {
+                    score += cell.value;
+                }
+            }
+        }
+        score
+    }
 }
