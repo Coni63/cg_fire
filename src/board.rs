@@ -1,11 +1,10 @@
-#[derive(PartialEq)]
 pub enum CellType {
     Tree,
     House,
     Empty,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 pub enum CellState {
     Safe,
     OnFire,
@@ -18,8 +17,11 @@ pub struct Cell {
     cell_type: CellType,
     fire_duration: i32,
     cut_duration: i32,
+    initial_value: i32,
     value: i32,
     state: CellState,
+    initial_state: CellState,
+    timer: i32,
 }
 
 impl Cell {
@@ -34,22 +36,49 @@ impl Cell {
             cell_type,
             fire_duration,
             cut_duration,
+            initial_value: value,
             value,
             state,
+            initial_state: state,
+            timer: 0,
         }
     }
 
-    pub fn set_safe(&mut self) {
-        self.cell_type = CellType::Empty;
-        self.value = 0;
+    pub fn set_state(&mut self, state: CellState) {
+        match state {
+            CellState::Safe => {
+                self.state = CellState::Safe;
+                self.timer = 0;
+                self.value = 0;
+            }
+            CellState::OnFire => {
+                if self.state == CellState::Unsafe {
+                    self.state = CellState::OnFire;
+                    self.timer = self.fire_duration;
+                    self.value = 0;
+                }
+            }
+            CellState::Cutting => {
+                self.state = CellState::Cutting;
+                self.timer = self.cut_duration;
+                self.value = 0;
+            }
+            CellState::Unsafe => {
+                self.state = CellState::Unsafe;
+                self.timer = 0;
+            }
+            CellState::Burnt => {
+                self.state = CellState::Burnt;
+                self.timer = 0;
+                self.value = 0;
+            }
+        }
     }
 
-    pub fn set_on_fire(&mut self) {
-        if self.state != CellState::Unsafe {
-            return;
-        }
-        self.value = 0;
-        self.state = CellState::OnFire;
+    pub fn reset(&mut self) {
+        self.state = self.initial_state;
+        self.value = self.initial_value;
+        self.timer = 0;
     }
 }
 
@@ -81,6 +110,15 @@ impl Board {
         }
     }
 
+    pub fn reset(&mut self) {
+        for row in self.cells.iter_mut() {
+            for cell in row.iter_mut() {
+                cell.reset();
+            }
+        }
+        self.cooldown = 0;
+    }
+
     pub fn step(&mut self) -> bool {
         let mut count_fire = 0;
         let mut cells_to_propagate: Vec<(usize, usize)> = Vec::new();
@@ -93,14 +131,14 @@ impl Board {
                         cell.fire_duration -= 1;
                         count_fire += 1;
                         if cell.fire_duration == 0 {
-                            cell.state = CellState::Burnt;
+                            cell.set_state(CellState::Burnt);
                             cells_to_propagate.push((row, col));
                         }
                     }
                     CellState::Cutting => {
                         cell.cut_duration -= 1;
                         if cell.cut_duration == 0 {
-                            cell.set_safe();
+                            cell.set_state(CellState::Safe);
                         }
                     }
                     _ => {}
@@ -114,6 +152,10 @@ impl Board {
         count_fire == 0
     }
 
+    pub fn can_cut(&self) -> bool {
+        self.cooldown == 0
+    }
+
     pub fn cut(&mut self, row: usize, col: usize) {
         let cell = &mut self.cells[row][col];
         if cell.state == CellState::Unsafe {
@@ -125,10 +167,10 @@ impl Board {
     }
 
     fn propagate_fire(&mut self, row: usize, col: usize) {
-        self.cells[row - 1][col].set_on_fire();
-        self.cells[row + 1][col].set_on_fire();
-        self.cells[row][col - 1].set_on_fire();
-        self.cells[row][col + 1].set_on_fire();
+        self.cells[row - 1][col].set_state(CellState::OnFire);
+        self.cells[row + 1][col].set_state(CellState::OnFire);
+        self.cells[row][col - 1].set_state(CellState::OnFire);
+        self.cells[row][col + 1].set_state(CellState::OnFire);
     }
 
     pub fn show_values(&self) {

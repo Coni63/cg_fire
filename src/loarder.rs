@@ -1,6 +1,6 @@
 use std::io;
 
-use crate::board::{Board, Cell, CellType};
+use crate::board::{Board, Cell, CellState, CellType};
 
 macro_rules! parse_input {
     ($x:expr, $t:ident) => {
@@ -79,12 +79,12 @@ pub fn load_input() -> Board {
             let fire_progress = parse_input!(value, i32);
             match fire_progress {
                 -2 => {
-                    board[i][j].set_safe();
+                    board[i][j].set_state(CellState::Safe);
                 }
                 -1 => (),
                 _ => {
                     // TODO: set fire duration
-                    board[i][j].set_on_fire();
+                    board[i][j].set_state(CellState::OnFire);
                 }
             }
         }
