@@ -9,6 +9,8 @@ fn main() {
     // board.show_types();
     // board.show_fire();
 
+    board.reset();
+
     let actions: Vec<(usize, usize)> = agent::solve(&mut board);
 
     let mut turn = 0;

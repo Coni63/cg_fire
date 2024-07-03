@@ -4,7 +4,7 @@ pub enum CellType {
     Empty,
 }
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 pub enum CellState {
     Safe,
     OnFire,
@@ -44,6 +44,14 @@ impl Cell {
         }
     }
 
+    pub fn set_initial_fire(&mut self) {
+        self.state = CellState::OnFire;
+        self.initial_state = CellState::OnFire;
+        self.value = 0;
+        self.initial_value = 0;
+        self.timer = self.fire_duration;
+    }
+
     pub fn set_state(&mut self, state: CellState) {
         match state {
             CellState::Safe => {
@@ -78,7 +86,15 @@ impl Cell {
     pub fn reset(&mut self) {
         self.state = self.initial_state;
         self.value = self.initial_value;
-        self.timer = 0;
+        self.timer = if self.state == CellState::OnFire {
+            self.fire_duration
+        } else {
+            0
+        };
+    }
+
+    pub fn get_state(&self) -> CellState {
+        self.state
     }
 }
 
@@ -100,14 +116,29 @@ impl Board {
         cells: Vec<Vec<Cell>>,
         cooldown: i32,
     ) -> Board {
-        Board {
+        let mut board = Board {
             width,
             height,
             fire_start_x,
             fire_start_y,
             cells,
             cooldown,
-        }
+        };
+
+        board.cells[fire_start_y as usize][fire_start_x as usize].set_initial_fire();
+        board
+    }
+
+    pub fn get_height(&self) -> i32 {
+        self.height
+    }
+
+    pub fn get_width(&self) -> i32 {
+        self.width
+    }
+
+    pub fn get_cell(&self, row: i32, col: i32) -> &Cell {
+        &self.cells[row as usize][col as usize]
     }
 
     pub fn reset(&mut self) {
@@ -212,7 +243,7 @@ impl Board {
     }
 
     pub fn describe(&self) {
-        println!("Cooldown: {}", self.cooldown);
+        println!("Cooldown: {} - Score {}", self.cooldown, self.score());
     }
 
     pub fn score(&self) -> i32 {

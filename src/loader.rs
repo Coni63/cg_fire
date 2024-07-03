@@ -40,6 +40,8 @@ pub fn load_input() -> Board {
     let inputs = input_line.split(' ').collect::<Vec<_>>();
     let fire_start_x = parse_input!(inputs[0], i32); // column where the fire starts
     let fire_start_y = parse_input!(inputs[1], i32); // row where the fire starts
+
+    // Read the map
     for _ in 0..height as usize {
         let mut input_line = String::new();
         io::stdin().read_line(&mut input_line).unwrap();
@@ -68,6 +70,7 @@ pub fn load_input() -> Board {
         board.push(row);
     }
 
+    // per turn input
     let mut input_line = String::new();
     io::stdin().read_line(&mut input_line).unwrap();
     let cooldown = parse_input!(input_line, i32); // number of turns remaining before you can cut a new cell
