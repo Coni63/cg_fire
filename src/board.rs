@@ -208,9 +208,9 @@ impl Board {
     pub fn show_values(&self) {
         for row in self.cells.iter() {
             for cell in row.iter() {
-                print!("{:>4} ", cell.value);
+                eprint!("{:>4} ", cell.value);
             }
-            println!();
+            eprintln!();
         }
     }
 
@@ -218,12 +218,12 @@ impl Board {
         for row in self.cells.iter() {
             for cell in row.iter() {
                 match cell.cell_type {
-                    CellType::Tree => print!("."),
-                    CellType::House => print!("X"),
-                    CellType::Empty => print!("#"),
+                    CellType::Tree => eprint!("."),
+                    CellType::House => eprint!("X"),
+                    CellType::Empty => eprint!("#"),
                 }
             }
-            println!();
+            eprintln!();
         }
     }
 
@@ -231,19 +231,19 @@ impl Board {
         for row in self.cells.iter() {
             for cell in row.iter() {
                 match cell.state {
-                    CellState::Safe => print!("#"),
-                    CellState::OnFire => print!("{}", cell.timer),
-                    CellState::Unsafe => print!("."),
-                    CellState::Burnt => print!("#"),
-                    CellState::Cutting => print!("C"),
+                    CellState::Safe => eprint!("#"),
+                    CellState::OnFire => eprint!("{}", cell.timer),
+                    CellState::Unsafe => eprint!("."),
+                    CellState::Burnt => eprint!("#"),
+                    CellState::Cutting => eprint!("C"),
                 }
             }
-            println!();
+            eprintln!();
         }
     }
 
     pub fn describe(&self) {
-        println!("Cooldown: {} - Score {}", self.cooldown, self.score());
+        eprintln!("Cooldown: {} - Score {}", self.cooldown, self.score());
     }
 
     pub fn score(&self) -> i32 {
