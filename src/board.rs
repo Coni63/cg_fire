@@ -96,6 +96,10 @@ impl Cell {
     pub fn get_state(&self) -> CellState {
         self.state
     }
+
+    pub fn get_cut_duration(&self) -> i32 {
+        self.cut_duration
+    }
 }
 
 pub struct Board {
@@ -137,8 +141,8 @@ impl Board {
         self.width
     }
 
-    pub fn get_cell(&self, row: i32, col: i32) -> &Cell {
-        &self.cells[row as usize][col as usize]
+    pub fn get_cell(&self, row: &i32, col: &i32) -> &Cell {
+        &self.cells[*row as usize][*col as usize]
     }
 
     pub fn reset(&mut self) {
@@ -188,8 +192,8 @@ impl Board {
         self.cooldown == 0
     }
 
-    pub fn cut(&mut self, row: usize, col: usize) {
-        let cell = &mut self.cells[row][col];
+    pub fn cut(&mut self, row: i32, col: i32) {
+        let cell = &mut self.cells[row as usize][col as usize];
         if cell.state == CellState::Unsafe {
             cell.state = CellState::Cutting;
             cell.value = 0;

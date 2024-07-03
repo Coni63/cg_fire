@@ -9,9 +9,12 @@ fn main() {
     // board.show_types();
     // board.show_fire();
 
-    board.reset();
+    let start_time = std::time::Instant::now();
+    let actions = agent::solve(&mut board);
+    eprintln!("Time: {:?}", start_time.elapsed());
+    eprintln!("Actions: {:?}", actions);
 
-    let actions: Vec<(usize, usize)> = agent::solve(&mut board);
+    board.reset();
 
     let mut turn = 0;
     let mut idx_action = 0;
@@ -24,8 +27,52 @@ fn main() {
         }
         end = board.step();
         turn += 1;
-        println!("Turn: {}", turn);
+        eprintln!("Turn: {}", turn);
         board.describe();
         board.show_fire();
     }
 }
+
+/*
+
+MAIN FOR CG
+
+fn main() {
+    let mut board = load_input();
+
+    let start_time = std::time::Instant::now();
+    let actions = solve(&mut board);
+
+    eprintln!("{:?}", actions);
+
+    board.reset();
+    let mut idx_action = 0;
+    let mut cooldown = 0;
+    // game loop
+    loop {
+        if cooldown == 0 {
+            if idx_action < actions.len() {
+                let (row, col) = actions[idx_action];
+                idx_action += 1;
+                println!("{} {}", col, row)
+            } else {
+                println!("WAIT");
+            }
+        } else {
+            println!("WAIT");
+        }
+
+        let mut input_line = String::new();
+        io::stdin().read_line(&mut input_line).unwrap();
+        cooldown = parse_input!(input_line, i32); // number of turns remaining before you can cut a new cell
+        for i in 0..board.get_height() as usize {
+            let mut inputs = String::new();
+            io::stdin().read_line(&mut inputs).unwrap();
+            for j in inputs.split_whitespace() {
+                let fire_progress = parse_input!(j, i32);
+            }
+        }
+    }
+}
+
+*/
