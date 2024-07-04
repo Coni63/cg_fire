@@ -27,10 +27,11 @@ fn main() {
         }
         end = board.step();
         turn += 1;
-        eprintln!("Turn: {}", turn);
-        board.describe();
-        board.show_fire();
+        // eprintln!("Turn: {}", turn);
+        // board.describe();
+        // board.show_fire();
     }
+    println!("{} pts", board.score());
 }
 
 /*

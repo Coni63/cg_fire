@@ -7,6 +7,13 @@ use std::{
 
 use crate::board::{Board, Cell, CellState};
 
+#[derive(Debug, Clone)]
+struct Section {
+    pub sections: Vec<(i32, i32)>,
+    pub time_to_cut: i32,
+    pub time_to_reach: i32,
+}
+
 pub fn compute_turns_fire(board: &mut Board) -> Vec<Vec<i32>> {
     board.reset();
 
@@ -91,21 +98,27 @@ fn compute_borders(turns: &Vec<Vec<i32>>) -> HashMap<i32, Vec<Vec<(i32, i32)>>> 
     length
 }
 
-fn analyse_front(
-    front_fire: HashMap<i32, Vec<Vec<(i32, i32)>>>,
-    board: &Board,
-) -> Vec<Vec<(i32, i32)>> {
+fn analyse_front(front_fire: HashMap<i32, Vec<Vec<(i32, i32)>>>, board: &Board) -> Vec<Section> {
     let mut options = Vec::new();
 
     for (timestamp, fronts) in front_fire.iter() {
         for front in fronts.iter() {
-            let mut time_to_cut = 0;
-            for (r, c) in front.iter() {
+            let mut time_to_cut = 1;
+            for (r, c) in front.iter().skip(1) {
                 time_to_cut += board.get_cell(r, c).get_cut_duration();
             }
 
+            eprintln!(
+                "Time to cut: {} vs Time_to_reach: {}",
+                time_to_cut, timestamp
+            );
+
             if time_to_cut < *timestamp {
-                options.push(front.clone());
+                options.push(Section {
+                    sections: front.clone(),
+                    time_to_cut,
+                    time_to_reach: *timestamp,
+                });
             }
         }
     }
@@ -113,7 +126,35 @@ fn analyse_front(
     options
 }
 
-fn find_combinations(options: Vec<Vec<(i32, i32)>>, board: &mut Board) -> Vec<(i32, i32)> {
+// Fonction récursive pour générer les combinaisons de sections
+fn recursive_generate(
+    sections: &[Section],
+    current_combination: &mut Vec<Section>,
+    current_time: i32,
+    result: &mut Vec<Vec<Section>>,
+) {
+    if current_combination.len() >= 2 {
+        return;
+    }
+
+    for (index, section) in sections.iter().enumerate() {
+        let new_time = current_time + section.time_to_cut;
+
+        if new_time < section.time_to_reach {
+            current_combination.push(section.clone());
+            result.push(current_combination.clone());
+            recursive_generate(
+                &sections[index + 1..],
+                current_combination,
+                new_time,
+                result,
+            );
+            current_combination.pop();
+        }
+    }
+}
+
+fn find_combinations(options: &mut Vec<Section>, board: &mut Board) -> Vec<(i32, i32)> {
     let mut best_score = 0;
     let mut best_option = Vec::new();
     // let timer = std::time::Instant::now();
@@ -121,12 +162,26 @@ fn find_combinations(options: Vec<Vec<(i32, i32)>>, board: &mut Board) -> Vec<(i
 
     // }
 
-    for option in options.iter() {
-        let score = evaluate_option(option, board);
+    options.sort_by_key(|option| option.time_to_reach * 1000 + option.time_to_cut);
+
+    let mut result: Vec<Vec<Section>> = Vec::new();
+    let mut current_combination: Vec<Section> = Vec::new();
+    recursive_generate(options, &mut current_combination, 0, &mut result);
+
+    eprintln!("{} Combinations", result.len());
+    // eprintln!("{:?}", result);
+
+    for all_sections in result.iter() {
+        let actions = all_sections
+            .iter()
+            .flat_map(|section| section.sections.clone())
+            .collect();
+
+        let score = evaluate_option(&actions, board);
         // eprintln!("Score: {} - best {} - {:?}", score, best_score, best_option);
         if score > best_score {
             best_score = score;
-            best_option = option.clone();
+            best_option = actions.clone();
         }
     }
 
@@ -155,8 +210,8 @@ pub fn solve(board: &mut Board) -> Vec<(i32, i32)> {
 
     // eprintln!("Fire front: {:?}", fire_front);
 
-    let options = analyse_front(fire_front, board);
-    eprintln!("{} Options: {:?}", options.len(), options);
+    let mut options = analyse_front(fire_front, board);
+    eprintln!("{} Options", options.len());
 
-    find_combinations(options, board)
+    find_combinations(&mut options, board)
 }
