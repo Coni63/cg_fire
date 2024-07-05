@@ -119,35 +119,22 @@ fn main() {
     let start_time = std::time::Instant::now();
     let actions = solve(&mut board);
 
-    eprintln!("{:?}", actions);
-
-    board.reset();
     let mut idx_action = 0;
     let mut cooldown = 0;
     // game loop
     loop {
-        if cooldown == 0 {
-            if idx_action < actions.len() {
-                let (row, col) = actions[idx_action];
-                idx_action += 1;
-                println!("{} {}", col, row)
-            } else {
-                println!("WAIT");
-            }
+        if board.can_act() && (idx_action < actions.len()) {
+            let idx = actions[idx_action];
+            board.cut(idx);
+            idx_action += 1;
+            println!("{} {}", idx%50, idx/50)
         } else {
             println!("WAIT");
         }
 
-        let mut input_line = String::new();
-        io::stdin().read_line(&mut input_line).unwrap();
-        cooldown = parse_input!(input_line, i32); // number of turns remaining before you can cut a new cell
-        for i in 0..board.get_height() as usize {
-            let mut inputs = String::new();
-            io::stdin().read_line(&mut inputs).unwrap();
-            for j in inputs.split_whitespace() {
-                let fire_progress = parse_input!(j, i32);
-            }
-        }
+        board.step();
+
+        load_turn_input(board.get_height());
     }
 }
 

@@ -1,3 +1,4 @@
+use rand::{self, Rng};
 use std::collections::VecDeque;
 
 use crate::board::{Board, Cell};
@@ -9,6 +10,10 @@ struct Section {
     pub time_to_reach: i32,
     pub time_to_save: i32,
 }
+
+/*
+ * Compute the sections of the board that can be cut
+ */
 
 fn compute_front_sections(board: &mut Board) -> Vec<Section> {
     let mut sections = Vec::new();
@@ -153,20 +158,62 @@ fn compute_sections(board: &mut Board) -> Vec<Section> {
     sections
 }
 
+/*
+ * Find the best combination of sections to cut
+ */
 fn find_combinations(options: &[Section], board: &mut Board) -> Vec<usize> {
+    let mut rng = rand::thread_rng();
+
     let mut best_score = 0;
     let mut best_option = Vec::new();
+    let mut pick_option: Vec<usize> = Vec::new();
+    let num_sections = options.len();
 
-    for (index, section) in options.iter().enumerate() {
-        let actions: Vec<usize> = section.sections.clone();
+    let mut simulation = 0;
+    let timer = std::time::Instant::now();
+    while timer.elapsed().as_millis() < 900 {
+        let mut total_cut_time = 0;
+        let mut first_idx = 0;
+        pick_option.clear();
+
+        loop {
+            first_idx = rng.gen_range(first_idx..num_sections);
+            let section = &options[first_idx];
+            if section.time_to_reach < total_cut_time {
+                break;
+            }
+            total_cut_time += options[first_idx].time_to_cut;
+            pick_option.push(first_idx);
+            first_idx += if first_idx < num_sections - 1 { 1 } else { 0 };
+
+            if rng.gen_bool(0.1) {
+                break;
+            }
+        }
+
+        let actions: Vec<usize> = pick_option
+            .iter()
+            .flat_map(|idx| options[*idx].sections.clone())
+            .collect();
+
+        // eprintln!("Actions: {:?}", actions);
+
         let score = evaluate_option(&actions, board);
+        // eprintln!("Score: {}", score);
         if score > best_score {
             best_score = score;
-            best_option = actions.clone();
+            best_option = pick_option.clone();
         }
+
+        simulation += 1;
     }
 
+    // eprintln!("Simulation: {}", simulation);
+
     best_option
+        .iter()
+        .flat_map(|idx| options[*idx].sections.clone())
+        .collect()
 }
 
 fn evaluate_option(actions: &[usize], board: &mut Board) -> i32 {
