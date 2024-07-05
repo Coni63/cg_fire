@@ -89,10 +89,6 @@ pub fn load_input() -> Board {
 fn main() {
     let mut board = load_input();
 
-    // board.show_values();
-    // board.show_types();
-    // board.show_fire();
-
     let start_time = std::time::Instant::now();
     let actions = solve(&mut board);
     eprintln!("Time: {:?}", start_time.elapsed());
@@ -108,17 +104,9 @@ fn main() {
         }
         end = board.step();
         turn += 1;
-        // eprintln!("Turn: {}", turn);
-        // board.describe();
-        // board.show_fire();
     }
 
-    println!(
-        "{} pts - {} turns - {:?}",
-        board.score(),
-        turn,
-        start_time.elapsed()
-    );
+    println!("{} pts - {} turns", board.score(), turn);
 }
 
 /*
