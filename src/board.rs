@@ -1,3 +1,5 @@
+use std::cmp::min;
+
 #[derive(Clone, Copy, Debug)]
 pub enum Cell {
     Tree,
@@ -28,6 +30,7 @@ pub struct Board {
     fire_start: usize,
 
     cells: [Cell; 2500],
+    duration: [u8; 2500],
 
     fires: Vec<usize>,
     cutting: usize,
@@ -63,12 +66,14 @@ impl Board {
             fire_start,
 
             cells,
+            duration: [u8::MAX; 2500],
 
             fires: Vec::new(),
             cutting: 0,
         };
 
         board.set_fire(fire_start);
+        board.compute_duration();
         board
     }
 
@@ -200,25 +205,8 @@ impl Board {
         }
     }
 
-    fn propagate_fire(&mut self, idx: usize) {
-        self.set_fire(idx - 50);
-        self.set_fire(idx + 50);
-        self.set_fire(idx - 1);
-        self.set_fire(idx + 1);
-    }
-
-    fn set_fire(&mut self, idx: usize) {
-        match self.cells[idx] {
-            Cell::Tree => {
-                self.cells[idx] = Cell::TreeBurning(self.tree_fire_duration);
-                self.fires.push(idx);
-            }
-            Cell::House => {
-                self.cells[idx] = Cell::HouseBurning(self.house_fire_duration);
-                self.fires.push(idx);
-            }
-            _ => {}
-        }
+    pub fn get_reached_duration(&self, idx: usize) -> u8 {
+        self.duration[idx]
     }
 
     pub fn show_values(&self) {
@@ -264,5 +252,40 @@ impl Board {
             }
         }
         score
+    }
+
+    fn propagate_fire(&mut self, idx: usize) {
+        self.set_fire(idx - 50);
+        self.set_fire(idx + 50);
+        self.set_fire(idx - 1);
+        self.set_fire(idx + 1);
+    }
+
+    fn set_fire(&mut self, idx: usize) {
+        match self.cells[idx] {
+            Cell::Tree => {
+                self.cells[idx] = Cell::TreeBurning(self.tree_fire_duration);
+                self.fires.push(idx);
+            }
+            Cell::House => {
+                self.cells[idx] = Cell::HouseBurning(self.house_fire_duration);
+                self.fires.push(idx);
+            }
+            _ => {}
+        }
+    }
+
+    fn compute_duration(&mut self) {
+        let mut end = false;
+        let mut turn: u8 = 0;
+        while !end {
+            for idx in self.get_fire().clone().iter() {
+                self.duration[*idx] = min(self.duration[*idx], turn);
+            }
+            end = self.step();
+            turn += 1;
+        }
+
+        self.reset();
     }
 }

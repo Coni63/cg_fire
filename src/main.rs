@@ -98,8 +98,6 @@ fn main() {
     eprintln!("Time: {:?}", start_time.elapsed());
     eprintln!("Actions: {:?}", actions);
 
-    board.reset();
-
     let mut turn = 1;
     let mut idx_action = 0;
     let mut end = false;
