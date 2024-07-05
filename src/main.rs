@@ -1,8 +1,9 @@
-// mod agent;
+mod agent;
 mod board;
 
 use std::io;
 
+use crate::agent::solve;
 use crate::board::{Board, Cell};
 
 macro_rules! parse_input {
@@ -18,7 +19,7 @@ pub fn load_turn_input(height: usize) {
     // per turn input
     let mut input_line = String::new();
     io::stdin().read_line(&mut input_line).unwrap();
-    for i in 0..height as usize {
+    for _ in 0..height {
         io::stdin().read_line(&mut input_line).unwrap();
     }
 }
@@ -52,14 +53,15 @@ pub fn load_input() -> Board {
     let inputs = input_line.split(' ').collect::<Vec<_>>();
     let fire_start_x = parse_input!(inputs[0], usize); // column where the fire starts
     let fire_start_y = parse_input!(inputs[1], usize); // row where the fire starts
+    let fire_start = fire_start_y * 50 + fire_start_x;
 
     // Read the map
-    for row in 0..height as usize {
+    for row in 0..height {
         let mut input_line = String::new();
         io::stdin().read_line(&mut input_line).unwrap();
         let grid_line = input_line.trim().to_string();
         for (col, c) in grid_line.chars().enumerate() {
-            cells[row * 50 + col as usize] = match c {
+            cells[row * 50 + col] = match c {
                 '.' => Cell::Tree,
                 'X' => Cell::House,
                 '#' => Cell::Empty,
@@ -79,10 +81,8 @@ pub fn load_input() -> Board {
         house_cut_duration,
         house_fire_duration,
         house_value,
-        fire_start_x,
-        fire_start_y,
+        fire_start,
         cells,
-        0,
     )
 }
 
@@ -94,9 +94,9 @@ fn main() {
     // board.show_fire();
 
     let start_time = std::time::Instant::now();
-    // let actions = solve(&mut board);
-    // eprintln!("Time: {:?}", start_time.elapsed());
-    // eprintln!("Actions: {:?}", actions);
+    let actions = solve(&mut board);
+    eprintln!("Time: {:?}", start_time.elapsed());
+    eprintln!("Actions: {:?}", actions);
 
     board.reset();
 
@@ -104,11 +104,10 @@ fn main() {
     let mut idx_action = 0;
     let mut end = false;
     while !end {
-        // if board.can_cut() && (idx_action < actions.len()) {
-        //     let (row, col) = actions[idx_action];
-        //     board.cut(row, col);
-        //     idx_action += 1;
-        // }
+        if board.can_act() && (idx_action < actions.len()) {
+            board.cut(actions[idx_action]);
+            idx_action += 1;
+        }
         end = board.step();
         turn += 1;
         // eprintln!("Turn: {}", turn);

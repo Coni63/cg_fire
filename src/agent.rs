@@ -1,129 +1,74 @@
-use core::time;
-use std::{
-    cell,
-    cmp::min,
-    collections::{HashMap, HashSet, VecDeque},
-};
+use std::collections::VecDeque;
 
-use crate::board::{Board, Cell, CellState};
+use crate::board::Board;
 
 #[derive(Debug, Clone)]
 struct Section {
-    pub sections: Vec<(i32, i32)>,
+    pub sections: Vec<usize>,
     pub time_to_cut: i32,
     pub time_to_reach: i32,
+    pub time_to_save: i32,
 }
 
-pub fn compute_turns_fire(board: &mut Board) -> Vec<Vec<i32>> {
-    board.reset();
+fn compute_sections(board: &mut Board) -> Vec<Section> {
+    let mut sections = Vec::new();
+    let mut visited: [bool; 2500] = [false; 2500];
+    let offset = [-1, -50, 1, 50, -51, -49, 49, 51];
 
-    let mut turns_fire: Vec<Vec<i32>> = Vec::new();
-    for _ in 0..board.get_height() {
-        let row_fire: Vec<i32> = (0..board.get_width()).map(|_| 9999).collect();
-        turns_fire.push(row_fire);
-    }
-
-    let mut turn = 0;
     let mut end = false;
+    let mut turn = 0;
     while !end {
-        end = board.step();
-        turn += 1;
-        for row in 0..board.get_height() {
-            for col in 0..board.get_width() {
-                if let CellState::OnFire = board.get_cell(&row, &col).get_state() {
-                    turns_fire[row as usize][col as usize] =
-                        min(turns_fire[row as usize][col as usize], turn);
-                }
-            }
-        }
-    }
-
-    board.reset();
-
-    turns_fire
-}
-
-fn compute_borders(turns: &Vec<Vec<i32>>) -> HashMap<i32, Vec<Vec<(i32, i32)>>> {
-    let offset = [
-        (0, 1),
-        (0, -1),
-        (1, 0),
-        (-1, 0),
-        (1, 1),
-        (-1, -1),
-        (1, -1),
-        (-1, 1),
-    ];
-    let mut length: HashMap<i32, Vec<Vec<(i32, i32)>>> = HashMap::new();
-    let mut queue: VecDeque<(i32, i32)> = VecDeque::new();
-    let mut visited: HashSet<i32> = HashSet::new();
-    for (row, values) in turns.iter().enumerate() {
-        for (col, value) in values.iter().enumerate() {
-            if (*value == 0) | (*value == 9999) {
+        let fires = board.get_fire();
+        for idx in fires.iter() {
+            if visited[*idx] {
                 continue;
             }
 
-            // look for the first non visited cell
-            let hash = row as i32 * 100 + col as i32;
-            if visited.contains(&hash) {
-                continue;
-            }
+            let mut queue: VecDeque<usize> = VecDeque::new();
+            let mut section: Vec<usize> = Vec::new();
 
-            // start a BFS from this cell
-            let target_value = value;
-            let mut count = Vec::new();
-
-            queue.push_back((row as i32, col as i32));
-
-            while !queue.is_empty() {
-                let (r, c) = queue.pop_front().unwrap();
-
-                if visited.contains(&(r * 100 + c)) {
+            queue.push_back(*idx);
+            while let Some(idx) = queue.pop_front() {
+                if visited[idx] {
                     continue;
                 }
+                visited[idx] = true;
 
-                if *target_value == turns[r as usize][c as usize] {
-                    count.push((r, c));
-                    visited.insert(r * 100 + c);
+                section.push(idx);
 
-                    for (dr, dc) in offset.iter() {
-                        queue.push_back((r + dr, c + dc));
+                for off in offset.iter() {
+                    let new_idx = (idx as i32 + off) as usize;
+                    if fires.contains(&new_idx) & !visited[new_idx] {
+                        queue.push_back(new_idx);
                     }
                 }
             }
 
-            length.entry(*target_value).or_default().push(count);
-        }
-    }
-    length
-}
+            let times: Vec<i32> = section
+                .iter()
+                .map(|idx| board.get_cut_duration(*idx))
+                .collect();
+            let time_to_cut = times.iter().sum();
+            let time_to_save = time_to_cut - times[0] + 1;
+            let section = Section {
+                sections: section,
+                time_to_cut,
+                time_to_reach: turn,
+                time_to_save,
+            };
 
-fn analyse_front(front_fire: HashMap<i32, Vec<Vec<(i32, i32)>>>, board: &Board) -> Vec<Section> {
-    let mut options = Vec::new();
-
-    for (timestamp, fronts) in front_fire.iter() {
-        for front in fronts.iter() {
-            let mut time_to_cut = 1;
-            for (r, c) in front.iter().skip(1) {
-                time_to_cut += board.get_cell(r, c).get_cut_duration();
-            }
-
-            eprintln!(
-                "Time to cut: {} vs Time_to_reach: {}",
-                time_to_cut, timestamp
-            );
-
-            if time_to_cut < *timestamp {
-                options.push(Section {
-                    sections: front.clone(),
-                    time_to_cut,
-                    time_to_reach: *timestamp,
-                });
+            if section.time_to_save <= section.time_to_reach {
+                sections.push(section);
             }
         }
+        end = board.step();
+        turn += 1;
     }
+    board.reset();
 
-    options
+    sections.sort_by_key(|option| option.time_to_reach * 1000 + option.time_to_save);
+
+    sections
 }
 
 // Fonction récursive pour générer les combinaisons de sections
@@ -154,15 +99,9 @@ fn recursive_generate(
     }
 }
 
-fn find_combinations(options: &mut Vec<Section>, board: &mut Board) -> Vec<(i32, i32)> {
+fn find_combinations(options: &[Section], board: &mut Board) -> Vec<usize> {
     let mut best_score = 0;
     let mut best_option = Vec::new();
-    // let timer = std::time::Instant::now();
-    // while timer.elapsed().as_millis() < 4500 {
-
-    // }
-
-    options.sort_by_key(|option| option.time_to_reach * 1000 + option.time_to_cut);
 
     let mut result: Vec<Vec<Section>> = Vec::new();
     let mut current_combination: Vec<Section> = Vec::new();
@@ -172,7 +111,7 @@ fn find_combinations(options: &mut Vec<Section>, board: &mut Board) -> Vec<(i32,
     // eprintln!("{:?}", result);
 
     for all_sections in result.iter() {
-        let actions = all_sections
+        let actions: Vec<usize> = all_sections
             .iter()
             .flat_map(|section| section.sections.clone())
             .collect();
@@ -188,14 +127,13 @@ fn find_combinations(options: &mut Vec<Section>, board: &mut Board) -> Vec<(i32,
     best_option
 }
 
-fn evaluate_option(actions: &Vec<(i32, i32)>, board: &mut Board) -> i32 {
+fn evaluate_option(actions: &[usize], board: &mut Board) -> i32 {
     board.reset();
     let mut idx_action = 0;
     let mut end = false;
     while !end {
-        if board.can_cut() && (idx_action < actions.len()) {
-            let (row, col) = actions[idx_action];
-            board.cut(row, col);
+        if board.can_act() && (idx_action < actions.len()) {
+            board.cut(actions[idx_action]);
             idx_action += 1;
         }
         end = board.step();
@@ -204,14 +142,9 @@ fn evaluate_option(actions: &Vec<(i32, i32)>, board: &mut Board) -> i32 {
     board.score()
 }
 
-pub fn solve(board: &mut Board) -> Vec<(i32, i32)> {
-    let turns_fire = compute_turns_fire(board);
-    let fire_front = compute_borders(&turns_fire);
+pub fn solve(board: &mut Board) -> Vec<usize> {
+    let sections = compute_sections(board);
+    // eprintln!("{} Sections", sections.len());
 
-    // eprintln!("Fire front: {:?}", fire_front);
-
-    let mut options = analyse_front(fire_front, board);
-    eprintln!("{} Options", options.len());
-
-    find_combinations(&mut options, board)
+    find_combinations(&sections, board)
 }
