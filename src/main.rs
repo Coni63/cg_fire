@@ -1,37 +1,127 @@
-mod agent;
+// mod agent;
 mod board;
-mod loader;
+
+use std::io;
+
+use crate::board::{Board, Cell};
+
+macro_rules! parse_input {
+    ($x:expr, $t:ident) => {
+        $x.trim().parse::<$t>().unwrap()
+    };
+}
+
+/**
+ * Read the constant data of the map before the main loop, then read the state of the fire and give an action at each turn
+ **/
+pub fn load_turn_input(height: usize) {
+    // per turn input
+    let mut input_line = String::new();
+    io::stdin().read_line(&mut input_line).unwrap();
+    for i in 0..height as usize {
+        io::stdin().read_line(&mut input_line).unwrap();
+    }
+}
+
+pub fn load_input() -> Board {
+    let mut cells: [Cell; 2500] = [Cell::Empty; 2500];
+
+    let mut input_line = String::new();
+
+    io::stdin().read_line(&mut input_line).unwrap();
+    let inputs = input_line.split(' ').collect::<Vec<_>>();
+    let tree_cut_duration = parse_input!(inputs[0], i32); // cooldown for cutting a "tree" cell
+    let tree_fire_duration = parse_input!(inputs[1], i32); // number of turns for the fire to propagate on adjacent cells from a "tree" cell
+    let tree_value = parse_input!(inputs[2], i32); // value lost if a "tree" cell is burnt or cut
+
+    let mut input_line = String::new();
+    io::stdin().read_line(&mut input_line).unwrap();
+    let inputs = input_line.split(' ').collect::<Vec<_>>();
+    let house_cut_duration = parse_input!(inputs[0], i32); // cooldown for cutting a "house" cell
+    let house_fire_duration = parse_input!(inputs[1], i32); // number of turns for the fire to propagate on adjacent cells from a "house" cell
+    let house_value = parse_input!(inputs[2], i32); // value lost if a "house" cell is burnt or cut
+
+    let mut input_line = String::new();
+    io::stdin().read_line(&mut input_line).unwrap();
+    let inputs = input_line.split(' ').collect::<Vec<_>>();
+    let width = parse_input!(inputs[0], usize); // number of columns in the grid
+    let height = parse_input!(inputs[1], usize); // number of rows in the grid
+
+    let mut input_line = String::new();
+    io::stdin().read_line(&mut input_line).unwrap();
+    let inputs = input_line.split(' ').collect::<Vec<_>>();
+    let fire_start_x = parse_input!(inputs[0], usize); // column where the fire starts
+    let fire_start_y = parse_input!(inputs[1], usize); // row where the fire starts
+
+    // Read the map
+    for row in 0..height as usize {
+        let mut input_line = String::new();
+        io::stdin().read_line(&mut input_line).unwrap();
+        let grid_line = input_line.trim().to_string();
+        for (col, c) in grid_line.chars().enumerate() {
+            cells[row * 50 + col as usize] = match c {
+                '.' => Cell::Tree,
+                'X' => Cell::House,
+                '#' => Cell::Empty,
+                _ => panic!("Invalid cell type"),
+            };
+        }
+    }
+
+    load_turn_input(height);
+
+    Board::new(
+        width,
+        height,
+        tree_cut_duration,
+        tree_fire_duration,
+        tree_value,
+        house_cut_duration,
+        house_fire_duration,
+        house_value,
+        fire_start_x,
+        fire_start_y,
+        cells,
+        0,
+    )
+}
 
 fn main() {
-    let mut board = loader::load_input();
+    let mut board = load_input();
 
     // board.show_values();
     // board.show_types();
     // board.show_fire();
 
     let start_time = std::time::Instant::now();
-    let actions = agent::solve(&mut board);
-    eprintln!("Time: {:?}", start_time.elapsed());
-    eprintln!("Actions: {:?}", actions);
+    // let actions = solve(&mut board);
+    // eprintln!("Time: {:?}", start_time.elapsed());
+    // eprintln!("Actions: {:?}", actions);
 
     board.reset();
 
-    let mut turn = 0;
+    let mut turn = 1;
     let mut idx_action = 0;
     let mut end = false;
     while !end {
-        if board.can_cut() && (idx_action < actions.len()) {
-            let (row, col) = actions[idx_action];
-            board.cut(row, col);
-            idx_action += 1;
-        }
+        // if board.can_cut() && (idx_action < actions.len()) {
+        //     let (row, col) = actions[idx_action];
+        //     board.cut(row, col);
+        //     idx_action += 1;
+        // }
         end = board.step();
         turn += 1;
         // eprintln!("Turn: {}", turn);
         // board.describe();
         // board.show_fire();
     }
-    println!("{} pts", board.score());
+
+    println!(
+        "{} pts - {} turns - {:?}",
+        board.score(),
+        turn,
+        start_time.elapsed()
+    );
 }
 
 /*
