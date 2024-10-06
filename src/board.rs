@@ -1,6 +1,6 @@
 use std::cmp::min;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Cell {
     Tree,
     TreeBurning(i32),
@@ -87,6 +87,18 @@ impl Board {
 
     pub fn get_cell(&self, idx: usize) -> &Cell {
         &self.cells[idx]
+    }
+
+    pub fn get_fire_start(&self) -> usize {
+        self.fire_start
+    }
+
+    pub fn get_burn_time(&self, idx: usize) -> i32 {
+        match self.cells[idx] {
+            Cell::Tree => self.tree_fire_duration,
+            Cell::House => self.house_fire_duration,
+            _ => 0,
+        }
     }
 
     pub fn reset(&mut self) {

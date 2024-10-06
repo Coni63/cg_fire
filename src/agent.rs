@@ -1,239 +1,114 @@
 use rand::{self, Rng};
-use std::collections::VecDeque;
+use std::{
+    collections::{HashMap, VecDeque},
+    time::Instant,
+};
 
 use crate::board::{Board, Cell};
 
-#[derive(Debug, Clone)]
-struct Section {
-    pub sections: Vec<usize>,
-    pub time_to_cut: i32,
-    pub time_to_reach: i32,
-    pub time_to_save: i32,
-}
+fn bfs(board: &Board, core_idx: usize) -> HashMap<usize, usize> {
+    let dirs = [-1, 1, -50, 50];
 
-/*
- * Compute the sections of the board that can be cut
- */
+    let mut ans = HashMap::new();
+    ans.insert(core_idx, 0);
 
-fn compute_front_sections(board: &mut Board) -> Vec<Section> {
-    let mut sections = Vec::new();
-    let mut visited: [bool; 2500] = [false; 2500];
-    let offset = [-1, -50, 1, 50, -51, -49, 49, 51];
+    let mut queue: VecDeque<usize> = VecDeque::new();
+    queue.push_back(core_idx);
 
-    let mut end = false;
-    let mut turn = 0;
-    while !end {
-        let fires = board.get_fire();
-        for idx in fires.iter() {
-            if visited[*idx] {
+    while let Some(idx) = queue.pop_front() {
+        for d_idx in dirs.iter() {
+            let n_idx = (idx as i32 + d_idx) as usize;
+            if ans.contains_key(&n_idx) {
                 continue;
             }
 
-            let mut queue: VecDeque<usize> = VecDeque::new();
-            let mut section: Vec<usize> = Vec::new();
-
-            queue.push_back(*idx);
-            while let Some(idx) = queue.pop_front() {
-                if visited[idx] {
-                    continue;
-                }
-                visited[idx] = true;
-
-                section.push(idx);
-
-                for off in offset.iter() {
-                    let new_idx = (idx as i32 + off) as usize;
-                    if fires.contains(&new_idx) & !visited[new_idx] {
-                        queue.push_back(new_idx);
-                    }
-                }
-            }
-
-            let times: Vec<i32> = section
-                .iter()
-                .map(|idx| board.get_cut_duration(*idx))
-                .collect();
-            let time_to_cut = times.iter().sum();
-            let time_to_save = time_to_cut - times[0] + 1;
-            let section = Section {
-                sections: section,
-                time_to_cut,
-                time_to_reach: turn,
-                time_to_save,
-            };
-
-            if section.time_to_save <= section.time_to_reach {
-                sections.push(section);
-            }
-        }
-        end = board.step();
-        turn += 1;
-    }
-    board.reset();
-
-    sections
-}
-
-fn compute_city_sections(board: &mut Board) -> Vec<Section> {
-    let offset = [-1, -50, 1, 50];
-    let mut visited: [bool; 2500] = [false; 2500];
-    let mut sections: Vec<Section> = Vec::new();
-
-    for row in 1..board.get_height() - 1 {
-        for col in 1..board.get_width() - 1 {
-            let idx = row * 50 + col;
-            if visited[idx] {
+            if board.get_cell(n_idx) == &Cell::Empty {
                 continue;
             }
 
-            if let Cell::House = board.get_cell(idx) {
-                let mut section: Vec<usize> = Vec::new();
-                let mut queue: VecDeque<usize> = VecDeque::new();
-                queue.push_back(idx);
-                while let Some(idx) = queue.pop_front() {
-                    if visited[idx] {
-                        continue;
-                    }
-                    visited[idx] = true;
-
-                    for off in offset.iter() {
-                        let new_idx = (idx as i32 + off) as usize;
-                        match board.get_cell(new_idx) {
-                            Cell::House => {
-                                queue.push_back(new_idx);
-                            }
-                            Cell::Tree => {
-                                if !section.contains(&new_idx) {
-                                    section.push(new_idx);
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-
-                if section.is_empty() {
-                    continue;
-                }
-
-                section.sort_by_key(|idx| board.get_reached_duration(*idx));
-
-                let times: Vec<i32> = section
-                    .iter()
-                    .map(|idx| board.get_cut_duration(*idx))
-                    .collect();
-                let time_to_cut = times.iter().sum();
-                let time_to_save = time_to_cut - times[0] + 1;
-                let time_to_reach = section
-                    .iter()
-                    .map(|idx| board.get_reached_duration(*idx))
-                    .min()
-                    .unwrap_or(0) as i32;
-
-                let section = Section {
-                    sections: section,
-                    time_to_cut,
-                    time_to_reach,
-                    time_to_save,
-                };
-
-                sections.push(section);
-            }
+            ans.insert(n_idx, ans.get(&idx).unwrap() + 1);
+            queue.push_back(n_idx);
         }
     }
 
-    sections
+    ans
 }
 
-fn compute_sections(board: &mut Board) -> Vec<Section> {
-    let front_sections = compute_front_sections(board);
-    let city_sections = compute_city_sections(board);
-
-    let mut sections = Vec::new();
-    sections.extend(front_sections);
-    sections.extend(city_sections);
-
-    sections.sort_by_key(|option| option.time_to_reach * 1000 + option.time_to_save);
-
-    sections
-}
-
-/*
- * Find the best combination of sections to cut
- */
-fn find_combinations(options: &[Section], board: &mut Board) -> Vec<usize> {
-    let mut rng = rand::thread_rng();
-
-    let mut best_score = 0;
-    let mut best_option = Vec::new();
-    let mut pick_option: Vec<usize> = Vec::new();
-    let num_sections = options.len();
-
-    let mut simulation = 0;
-    let timer = std::time::Instant::now();
-    while timer.elapsed().as_millis() < 900 {
-        let mut total_cut_time = 0;
-        let mut first_idx = 0;
-        pick_option.clear();
-
-        loop {
-            first_idx = rng.gen_range(first_idx..num_sections);
-            let section = &options[first_idx];
-            if section.time_to_reach < total_cut_time {
-                break;
-            }
-            total_cut_time += options[first_idx].time_to_cut;
-            pick_option.push(first_idx);
-            first_idx += if first_idx < num_sections - 1 { 1 } else { 0 };
-
-            if rng.gen_bool(0.1) {
-                break;
-            }
-        }
-
-        let actions: Vec<usize> = pick_option
-            .iter()
-            .flat_map(|idx| options[*idx].sections.clone())
-            .collect();
-
-        // eprintln!("Actions: {:?}", actions);
-
-        let score = evaluate_option(&actions, board);
-        // eprintln!("Score: {}", score);
-        if score > best_score {
-            best_score = score;
-            best_option = pick_option.clone();
-        }
-
-        simulation += 1;
-    }
-
-    // eprintln!("Simulation: {}", simulation);
-
-    best_option
+fn get_boundary(board: &Board, core_bfs: &HashMap<usize, usize>, radius: usize) -> Vec<usize> {
+    let mut boundary: Vec<usize> = core_bfs
         .iter()
-        .flat_map(|idx| options[*idx].sections.clone())
-        .collect()
+        .filter(|(_, &v)| v == radius)
+        .map(|(&k, _)| k)
+        .collect();
+
+    boundary.sort_by_cached_key(|idx| board.get_reached_duration(*idx));
+    boundary
 }
 
-fn evaluate_option(actions: &[usize], board: &mut Board) -> i32 {
-    let mut idx_action = 0;
-    let mut end = false;
-    while !end {
-        if board.can_act() && (idx_action < actions.len()) {
-            board.cut(actions[idx_action]);
-            idx_action += 1;
+fn is_valid(board: &Board, boundary: &[usize]) -> bool {
+    let mut t: i32 = 0;
+
+    for &idx in boundary.iter() {
+        if board.get_reached_duration(idx) as i32 <= t {
+            return false;
         }
-        end = board.step();
+
+        t += board.get_cut_duration(idx);
+    }
+    true
+}
+
+fn get_score(board: &Board, core_bfs: &HashMap<usize, usize>, radius: usize) -> i32 {
+    let mut score = 0;
+    let d = core_bfs.get(&board.get_fire_start()).unwrap_or(&0);
+    if *d < radius {
+        // outside square
+        for (&idx, &dist) in core_bfs.iter() {
+            if dist > radius {
+                score += board.get_value(idx);
+            }
+        }
+    } else {
+        // inside_square
+        for (&idx, &dist) in core_bfs.iter() {
+            if dist < radius {
+                score += board.get_value(idx);
+            }
+        }
     }
 
-    let score = board.score();
-    board.reset();
     score
 }
 
 pub fn solve(board: &mut Board) -> Vec<usize> {
-    let sections = compute_sections(board);
+    let timer = Instant::now();
+    let mut rng = rand::thread_rng();
 
-    find_combinations(&sections, board)
+    let mut best_boundary = vec![];
+    let mut best_boundary_score = -1;
+    let mut simulations = 0;
+    let max_radius = std::cmp::max(board.get_width(), board.get_height());
+
+    while timer.elapsed().as_millis() < 4950 {
+        let core_x = rng.gen_range(1..board.get_width() - 1);
+        let core_y = rng.gen_range(1..board.get_height() - 1);
+        let core_idx = core_y * 50 + core_x;
+        let radius = rng.gen_range(1..max_radius);
+
+        let core_bfs = bfs(board, core_idx);
+        let boundary = get_boundary(board, &core_bfs, radius);
+
+        if is_valid(board, &boundary) {
+            let score = get_score(board, &core_bfs, radius);
+            if score > best_boundary_score {
+                best_boundary_score = score;
+                best_boundary = boundary;
+            }
+            simulations += 1;
+            // break;
+        }
+    }
+
+    eprintln!("{} simulations in {:?}", simulations, timer.elapsed());
+    best_boundary
 }
