@@ -88,6 +88,7 @@ pub fn solve(board: &mut Board) -> Vec<usize> {
     let mut best_boundary_score = -1;
     let mut simulations = 0;
     let max_radius = std::cmp::max(board.get_width(), board.get_height());
+    let mut cache: Vec<Option<HashMap<usize, usize>>> = (0..2500).map(|_| None).collect();
 
     while timer.elapsed().as_millis() < 4950 {
         let core_x = rng.gen_range(1..board.get_width() - 1);
@@ -95,11 +96,18 @@ pub fn solve(board: &mut Board) -> Vec<usize> {
         let core_idx = core_y * 50 + core_x;
         let radius = rng.gen_range(1..max_radius);
 
-        let core_bfs = bfs(board, core_idx);
-        let boundary = get_boundary(board, &core_bfs, radius);
+        let core_bfs = match cache.get(core_idx).unwrap() {
+            Some(x) => x,
+            None => {
+                let res = bfs(board, core_idx);
+                cache[core_idx] = Some(res);
+                cache.get(core_idx).unwrap().as_ref().unwrap()
+            }
+        };
+        let boundary = get_boundary(board, core_bfs, radius);
 
         if is_valid(board, &boundary) {
-            let score = get_score(board, &core_bfs, radius);
+            let score = get_score(board, core_bfs, radius);
             if score > best_boundary_score {
                 best_boundary_score = score;
                 best_boundary = boundary;
@@ -108,6 +116,8 @@ pub fn solve(board: &mut Board) -> Vec<usize> {
             // break;
         }
     }
+
+    eprintln!("{}", cache.len());
 
     eprintln!("{} simulations in {:?}", simulations, timer.elapsed());
     best_boundary
