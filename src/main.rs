@@ -1,10 +1,7 @@
-mod agent;
-mod board;
-
-use std::io;
-
-use crate::agent::solve;
-use crate::board::{Board, Cell};
+use rand::Rng;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::io::{self, BufRead};
+use std::time::Instant;
 
 macro_rules! parse_input {
     ($x:expr, $t:ident) => {
@@ -12,130 +9,186 @@ macro_rules! parse_input {
     };
 }
 
-/**
- * Read the constant data of the map before the main loop, then read the state of the fire and give an action at each turn
- **/
-pub fn load_turn_input(height: usize) {
-    // per turn input
-    let mut input_line = String::new();
-    io::stdin().read_line(&mut input_line).unwrap();
-    for _ in 0..height {
-        io::stdin().read_line(&mut input_line).unwrap();
+type Coord = (usize, usize);
+type Point = (usize, usize, usize); // (x, y, radius)
+
+fn bfs(grid: &[Vec<char>], start: Coord, tree_time: i32, house_time: i32) -> HashMap<Coord, i32> {
+    let mut dist = HashMap::new();
+    dist.insert(start, 0);
+    let mut queue = VecDeque::new();
+    queue.push_back(start);
+
+    while let Some((x, y)) = queue.pop_back() {
+        let burn_time = match grid[y][x] {
+            '.' => tree_time,
+            'X' => house_time,
+            _ => panic!("Invalid cell"),
+        };
+
+        for (dx, dy) in &[(0, 1), (0, -1), (1, 0), (-1, 0)] {
+            let nx = x as i32 + dx;
+            let ny = y as i32 + dy;
+            if nx < 0 || ny < 0 || ny as usize >= grid.len() || nx as usize >= grid[0].len() {
+                continue;
+            }
+            let nc = (nx as usize, ny as usize);
+            if dist.contains_key(&nc) {
+                continue;
+            }
+            if grid[nc.1][nc.0] == '#' {
+                continue;
+            }
+            dist.insert(nc, dist[&(x, y)] + burn_time);
+            queue.push_front(nc);
+        }
     }
+    dist
 }
 
-pub fn load_input() -> Board {
-    let mut cells: [Cell; 2500] = [Cell::Empty; 2500];
-
+fn main() {
     let mut input_line = String::new();
-
     io::stdin().read_line(&mut input_line).unwrap();
-    let inputs = input_line.split(' ').collect::<Vec<_>>();
-    let tree_cut_duration = parse_input!(inputs[0], i32); // cooldown for cutting a "tree" cell
+    let inputs = input_line.split(" ").collect::<Vec<_>>();
+    let tree_treatment_duration = parse_input!(inputs[0], i32); // cooldown for cutting a "tree" cell
     let tree_fire_duration = parse_input!(inputs[1], i32); // number of turns for the fire to propagate on adjacent cells from a "tree" cell
     let tree_value = parse_input!(inputs[2], i32); // value lost if a "tree" cell is burnt or cut
 
     let mut input_line = String::new();
     io::stdin().read_line(&mut input_line).unwrap();
-    let inputs = input_line.split(' ').collect::<Vec<_>>();
-    let house_cut_duration = parse_input!(inputs[0], i32); // cooldown for cutting a "house" cell
+    let inputs = input_line.split(" ").collect::<Vec<_>>();
+    let house_treatment_duration = parse_input!(inputs[0], i32); // cooldown for cutting a "house" cell
     let house_fire_duration = parse_input!(inputs[1], i32); // number of turns for the fire to propagate on adjacent cells from a "house" cell
     let house_value = parse_input!(inputs[2], i32); // value lost if a "house" cell is burnt or cut
 
     let mut input_line = String::new();
     io::stdin().read_line(&mut input_line).unwrap();
-    let inputs = input_line.split(' ').collect::<Vec<_>>();
+    let inputs = input_line.split(" ").collect::<Vec<_>>();
     let width = parse_input!(inputs[0], usize); // number of columns in the grid
     let height = parse_input!(inputs[1], usize); // number of rows in the grid
+    let max_radius = width.max(height);
 
     let mut input_line = String::new();
     io::stdin().read_line(&mut input_line).unwrap();
-    let inputs = input_line.split(' ').collect::<Vec<_>>();
+    let inputs = input_line.split(" ").collect::<Vec<_>>();
     let fire_start_x = parse_input!(inputs[0], usize); // column where the fire starts
     let fire_start_y = parse_input!(inputs[1], usize); // row where the fire starts
-    let fire_start = fire_start_y * 50 + fire_start_x;
 
-    // Read the map
-    for row in 0..height {
+    let mut grid = Vec::new();
+    for i in 0..height as usize {
         let mut input_line = String::new();
         io::stdin().read_line(&mut input_line).unwrap();
         let grid_line = input_line.trim().to_string();
-        for (col, c) in grid_line.chars().enumerate() {
-            cells[row * 50 + col] = match c {
-                '.' => Cell::Tree,
-                'X' => Cell::House,
-                '#' => Cell::Empty,
-                _ => panic!("Invalid cell type"),
+        grid.push(grid_line.chars().collect::<Vec<_>>());
+    }
+
+    let mut tried: HashSet<usize> = HashSet::new();
+    let dists = bfs(
+        &grid,
+        (fire_start_x, fire_start_y),
+        tree_fire_duration,
+        house_fire_duration,
+    );
+
+    let start = Instant::now();
+    let mut best_boundary = Vec::new();
+    let mut best_score = -1;
+    let mut simulations = 0;
+    let mut skipped_simulations = 0;
+    let mut rng = rand::thread_rng();
+
+    while start.elapsed().as_secs_f64() < 4.90 {
+        let core_x = rng.gen_range(0..width);
+        let core_y = rng.gen_range(0..height);
+        let radius = rng.gen_range(1..=max_radius);
+
+        if grid[core_y][core_x] == '#' {
+            skipped_simulations += 1;
+            continue;
+        }
+
+        let key = core_x * 10000 + core_y * 100 + radius;
+        if tried.contains(&key) {
+            skipped_simulations += 1;
+            continue;
+        }
+        tried.insert(key);
+
+        let core_bfs = bfs(&grid, (core_x, core_y), 1, 1);
+        let mut boundary_cells = vec![];
+        for (&cell, &dist) in &core_bfs {
+            if dist == radius as i32 {
+                if let Some(&burn_time) = dists.get(&cell) {
+                    boundary_cells.push((burn_time, cell));
+                }
+            }
+        }
+        boundary_cells.sort();
+
+        let mut t = 0;
+        let mut valid = true;
+        for &(_, (x, y)) in &boundary_cells {
+            let burn_time = *dists.get(&(x, y)).unwrap_or(&i32::MAX);
+            if burn_time <= t {
+                valid = false;
+                break;
+            }
+            t += match grid[y][x] {
+                '.' => tree_treatment_duration,
+                'X' => house_treatment_duration,
+                _ => panic!("Invalid cell"),
             };
         }
-    }
 
-    load_turn_input(height);
-
-    Board::new(
-        width,
-        height,
-        tree_cut_duration,
-        tree_fire_duration,
-        tree_value,
-        house_cut_duration,
-        house_fire_duration,
-        house_value,
-        fire_start,
-        cells,
-    )
-}
-
-fn main() {
-    let mut board = load_input();
-
-    let start_time = std::time::Instant::now();
-    let actions = solve(&mut board);
-    eprintln!("Time: {:?}", start_time.elapsed());
-    eprintln!("Actions: {:?}", actions);
-
-    let mut turn = 1;
-    let mut idx_action = 0;
-    let mut end = false;
-    while !end {
-        if board.can_act() && (idx_action < actions.len()) {
-            board.cut(actions[idx_action]);
-            idx_action += 1;
+        simulations += 1;
+        if !valid {
+            continue;
         }
-        end = board.step();
-        turn += 1;
+
+        let mut score = 0;
+        let fire_dist = *core_bfs
+            .get(&(fire_start_x, fire_start_y))
+            .unwrap_or(&i32::MAX);
+        for (&(x, y), &d) in &core_bfs {
+            let val = match grid[y][x] {
+                '.' => tree_value,
+                'X' => house_value,
+                _ => 0,
+            };
+            if (fire_dist < radius as i32 && d > radius as i32)
+                || (fire_dist >= radius as i32 && d < radius as i32)
+            {
+                score += val;
+            }
+        }
+
+        if score > best_score {
+            best_score = score;
+            best_boundary = boundary_cells.iter().map(|&(_, coord)| coord).collect();
+        }
     }
 
-    println!("{} pts - {} turns", board.score(), turn);
-}
+    eprintln!(
+        "{} simulations + {} skipped",
+        simulations, skipped_simulations
+    );
+    eprintln!("{} best_boundary_score", best_score);
 
-/*
-
-MAIN FOR CG
-
-fn main() {
-    let mut board = load_input();
-
-    let start_time = std::time::Instant::now();
-    let actions = solve(&mut board);
-
-    let mut idx_action = 0;
-    let mut cooldown = 0;
-    // game loop
+    // Game loop
     loop {
-        if board.can_act() && (idx_action < actions.len()) {
-            let idx = actions[idx_action];
-            board.cut(idx);
-            idx_action += 1;
-            println!("{} {}", idx%50, idx/50)
-        } else {
-            println!("WAIT");
+        let mut input_line = String::new();
+        io::stdin().read_line(&mut input_line).unwrap();
+        let cooldown = parse_input!(input_line, i32);
+
+        for _ in 0..height {
+            let mut input_line = String::new();
+            io::stdin().read_line(&mut input_line).unwrap();
         }
 
-        board.step();
-
-        load_turn_input(board.get_height());
+        if cooldown > 0 || best_boundary.is_empty() {
+            println!("WAIT");
+        } else {
+            let (x, y) = best_boundary.remove(0);
+            println!("{} {}", x, y);
+        }
     }
 }
-
-*/
