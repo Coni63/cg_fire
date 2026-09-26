@@ -452,29 +452,289 @@ fn anneal(g: &Game, st: &State, start: Vec<u32>, until: Instant, t0: f64, t1: f6
     (score, plan)
 }
 
+/// Solution représentée par l'ensemble S des cellules à sauver (idée du forum).
+/// Le périmètre P = voisins de S hors S doit être rasé. Tant qu'aucune cellule de P n'a
+/// brûlé, le feu ne circule que dehors : l'échéance de chaque cellule de P se calcule donc
+/// avec toutes les coupes en place, et l'ordre par échéance croissante est optimal.
+#[derive(Clone)]
+struct Region {
+    in_s: Vec<bool>,
+    list: Vec<usize>,
+}
+
+impl Region {
+    fn new(n: usize) -> Region {
+        Region { in_s: vec![false; n], list: vec![] }
+    }
+    fn add(&mut self, c: usize) {
+        if !self.in_s[c] {
+            self.in_s[c] = true;
+            self.list.push(c);
+        }
+    }
+    fn remove(&mut self, c: usize) {
+        if self.in_s[c] {
+            self.in_s[c] = false;
+            let i = self.list.iter().position(|&x| x == c).unwrap();
+            self.list.swap_remove(i);
+        }
+    }
+}
+
+struct RegionEval {
+    mark: Vec<u32>,
+    stamp: u32,
+    ignite: Vec<i32>,
+    threat: Vec<i32>,
+    queue: Buckets,
+    perim: Vec<usize>,
+    cuts: Vec<usize>,
+    base: i32,
+    first: i32,
+}
+
+impl RegionEval {
+    fn new(g: &Game, st: &State) -> RegionEval {
+        let n = g.kind.len();
+        RegionEval {
+            mark: vec![0; n],
+            stamp: 0,
+            ignite: vec![NONE; n],
+            threat: vec![NONE; n],
+            queue: Buckets { b: vec![vec![]; 32], cur: 0, count: 0 },
+            perim: vec![],
+            cuts: vec![],
+            base: (0..n).filter(|&c| !st.cut[c]).map(|c| g.value(c)).sum(),
+            first: st.ignite.iter().copied().min().unwrap_or(0),
+        }
+    }
+
+    /// Score de la région, ou None si aucun ordre de coupe ne la protège.
+    /// Remplit `perim` (périmètre) et `cuts` (coupes utiles, dans l'ordre).
+    fn eval(&mut self, g: &Game, st: &State, r: &Region) -> Option<i32> {
+        self.stamp += 1;
+        let stamp = self.stamp;
+        self.perim.clear();
+        for &c in &r.list {
+            if st.ignite[c] != NONE {
+                return None;
+            }
+            for &n in &g.nb4[c] {
+                if !r.in_s[n] && !st.cut[n] && self.mark[n] != stamp {
+                    if st.ignite[n] != NONE {
+                        return None;
+                    }
+                    self.mark[n] = stamp;
+                    self.threat[n] = NONE;
+                    self.perim.push(n);
+                }
+            }
+        }
+
+        self.ignite.fill(NONE);
+        self.queue.clear(self.first);
+        for (c, &t) in st.ignite.iter().enumerate() {
+            if t != NONE {
+                self.queue.push(t, c);
+            }
+        }
+        let mut lost = 0;
+        while let Some((d, c)) = self.queue.peek() {
+            self.queue.pop();
+            if self.ignite[c] != NONE {
+                continue;
+            }
+            self.ignite[c] = d;
+            lost += g.value(c);
+            let nd = d + g.fire(c);
+            for &n in &g.nb4[c] {
+                if self.ignite[n] != NONE || st.cut[n] {
+                    continue;
+                }
+                if self.mark[n] == stamp {
+                    self.threat[n] = self.threat[n].min(nd);
+                } else {
+                    self.queue.push(nd, n);
+                }
+            }
+        }
+
+        // Les cellules du périmètre jamais menacées n'ont pas besoin d'être rasées
+        self.cuts.clear();
+        self.cuts.extend(self.perim.iter().copied().filter(|&p| self.threat[p] != NONE));
+        let threat = &self.threat;
+        self.cuts.sort_unstable_by_key(|&p| threat[p]);
+        let mut t = st.cooldown;
+        for &p in &self.cuts {
+            if t >= self.threat[p] {
+                return None;
+            }
+            t += g.step(p);
+            lost += g.value(p);
+        }
+        Some(self.base - lost)
+    }
+}
+
+/// Recuit sur les régions : on agrandit / réduit S en ne gardant que des régions
+/// protégeables. Redémarre régulièrement, depuis la meilleure région ou une cellule au hasard.
+fn region_search(g: &Game, st: &State, until: Instant, burst: usize, t0: f64, t1: f64, rng: &mut Rng) -> (i32, Vec<u32>) {
+    let n = g.kind.len();
+    let mut ev = RegionEval::new(g, st);
+    let cells: Vec<usize> = (0..n).filter(|&c| g.kind[c] != 0 && !st.cut[c] && st.ignite[c] == NONE).collect();
+    let houses: Vec<usize> = cells.iter().copied().filter(|&c| g.kind[c] == 2).collect();
+    let empty = Region::new(n);
+    let mut best_score = ev.eval(g, st, &empty).unwrap_or(0);
+    let mut best = empty.clone();
+    if cells.is_empty() {
+        return (best_score, vec![]);
+    }
+
+    let (mut restarts, mut iters) = (0, 0u64);
+    loop {
+        // Point de départ : la meilleure région, ou une nouvelle cellule (maison de préférence)
+        let mut cur = if restarts % 2 == 1 && !best.list.is_empty() {
+            best.clone()
+        } else {
+            let pool = if !houses.is_empty() && rng.below(2) == 0 { &houses } else { &cells };
+            let mut r = Region::new(n);
+            r.add(pool[rng.below(pool.len())]);
+            r
+        };
+        if std::env::var("DBG").is_ok() {
+            eprintln!("restart {} best {}", restarts, best_score);
+        }
+        restarts += 1;
+        if Instant::now() >= until {
+            break;
+        }
+        let Some(mut cur_score) = ev.eval(g, st, &cur) else { continue };
+        let mut cur_perim = ev.perim.clone();
+        let mut local = (cur_score, cur.clone());
+        let mut timeout = false;
+
+        for k in 0..burst {
+            if k % 64 == 0 && Instant::now() >= until {
+                timeout = true;
+                break;
+            }
+            iters += 1;
+            let temp = t0 * (t1 / t0).powf(k as f64 / burst as f64);
+            let r = rng.below(100);
+            let (added, c) = if r < 60 && !cur_perim.is_empty() {
+                (true, cur_perim[rng.below(cur_perim.len())])
+            } else if r < 85 && !cur.list.is_empty() {
+                (false, cur.list[rng.below(cur.list.len())])
+            } else {
+                let c = cells[rng.below(cells.len())];
+                if cur.in_s[c] {
+                    continue;
+                }
+                (true, c)
+            };
+            if added {
+                cur.add(c)
+            } else {
+                cur.remove(c)
+            }
+
+            match ev.eval(g, st, &cur) {
+                Some(s) if s >= cur_score || rng.f64() < ((s - cur_score) as f64 / temp).exp() => {
+                    cur_score = s;
+                    cur_perim.clone_from(&ev.perim);
+                    if s > local.0 {
+                        local = (s, cur.clone());
+                    }
+                }
+                _ => {
+                    if added {
+                        cur.remove(c)
+                    } else {
+                        cur.add(c)
+                    }
+                }
+            }
+        }
+
+        // Fusion avec la meilleure région : permet de sauver plusieurs zones disjointes
+        if local.0 > best_score {
+            best_score = local.0;
+            std::mem::swap(&mut best, &mut local.1);
+        }
+        let mut merged = best.clone();
+        for &c in &local.1.list {
+            merged.add(c);
+        }
+        if let Some(s) = ev.eval(g, st, &merged) {
+            if s > best_score {
+                best_score = s;
+                best = merged;
+            }
+        }
+        if timeout {
+            break;
+        }
+    }
+    let s = ev.eval(g, st, &best).unwrap();
+    if std::env::var("DBG").is_ok() {
+        for y in 0..n / g.w {
+            let row: String = (0..g.w)
+                .map(|x| {
+                    let c = y * g.w + x;
+                    if g.kind[c] == 0 {
+                        '#'
+                    } else if ev.cuts.contains(&c) {
+                        'C'
+                    } else if ev.ignite[c] != NONE {
+                        if g.kind[c] == 2 { 'F' } else { ',' }
+                    } else if g.kind[c] == 2 {
+                        'X'
+                    } else {
+                        '.'
+                    }
+                })
+                .collect();
+            eprintln!("{}", row);
+        }
+    }
+    eprintln!("region: {} ({} restarts, {} iters, |S| = {})", s, restarts, iters, best.list.len());
+    (s, ev.cuts.iter().map(|&c| c as u32).collect())
+}
+
 fn solve_first(g: &Game, st: &State, rng: &mut Rng, until: Instant) -> Vec<u32> {
     let now = Instant::now();
     let total = until.saturating_duration_since(now);
     let mut sim = Sim::new(g, st);
-    let seeds = ring_seeds(g, st, &mut sim, rng, now + total / 5);
-    eprintln!("seeds: {:?}", seeds.iter().map(|s| s.0).collect::<Vec<_>>());
-
     // Température à l'échelle de la valeur moyenne d'une cellule
     let free = g.kind.iter().filter(|&&k| k != 0).count().max(1);
     let avg = sim.base as f64 / free as f64;
     let env = |k: &str, d: f64| std::env::var(k).ok().and_then(|v| v.parse().ok()).unwrap_or(d);
     let (t0, t1) = ((avg * env("T0", 3.0)).max(1.0), (avg * env("T1", 0.2)).max(0.05));
 
-    let runs = env("RUNS", 1.0) as usize;
-    let mut best = seeds[0].clone();
-    for k in 0..runs {
-        let stop = Instant::now() + until.saturating_duration_since(Instant::now()) / (runs - k) as u32;
-        let seed = seeds[k.min(seeds.len() - 1)].1.clone();
-        let (s, plan) = anneal(g, st, seed, stop, t0, t1, rng);
-        eprintln!("run {}: {}", k, s);
+    // Portefeuille : chaque carte préfère des réglages différents, on garde le meilleur.
+    // (taille des rafales, T0, T1) pour le recuit sur les régions, puis couronnes + séquence.
+    let configs = [(5000, 3.0, 0.2), (5000, 10.0, 0.2), (1000, 3.0, 0.2), (5000, 1.0, 0.05)];
+    let slot = total.mul_f64(0.8 / (configs.len() + 1) as f64);
+    let mut best = (sim.run(g, st, &[]), vec![]);
+    for (k, &(burst, a, b)) in configs.iter().enumerate() {
+        let (_, plan) = region_search(g, st, now + slot * (k as u32 + 1), burst, avg * a, avg * b, rng);
+        let s = sim.run(g, st, &plan);
         if s > best.0 {
             best = (s, plan);
         }
+    }
+    let seeds = ring_seeds(g, st, &mut sim, rng, Instant::now() + slot / 3);
+    let (s, plan) = anneal(g, st, seeds[0].1.clone(), now + slot * (configs.len() as u32 + 1), t0, t1, rng);
+    eprintln!("rings + sequence: {}", s);
+    if s > best.0 {
+        best = (s, plan);
+    }
+
+    // Affinage final de la séquence de coupes
+    let (s, plan) = anneal(g, st, best.1.clone(), until, t0 * 0.3, t1, rng);
+    eprintln!("sequence: {}", s);
+    if s > best.0 {
+        best = (s, plan);
     }
     eprintln!("best {} ({} cuts)", best.0, best.1.len());
     best.1
